@@ -1,0 +1,67 @@
+name: Build Plugin
+on:
+  push:
+    tags:
+      - '*'
+concurrency:
+  group: build_dalamud_${{ github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build Artisan
+    runs-on: windows-2022
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+        with:
+          submodules: recursive
+          fetch-depth: 0
+      - name: Download Dalamud
+        run: |
+          Invoke-WebRequest `
+            -URI https://github.com/dohwacorp/Dalamud/releases/latest/download/dalamud.zip `
+            -OutFile Dalamud.zip
+          Expand-Archive -Path Dalamud.zip -DestinationPath $env:GITHUB_WORKSPACE\Dalamud
+      - name: Setup MSBuild
+        uses: microsoft/setup-msbuild@v1.1
+      - uses: actions/cache@v3
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-${{ hashFiles('**/packages.lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-nuget-
+      - name: Build Artisan
+        run: |
+          msbuild /t:restore `
+                  /p:RestorePackagesConfig=true
+          msbuild /p:DalamudLibPath=$env:GITHUB_WORKSPACE\Dalamud\ `
+                  /p:Configuration=Release
+      - name: Create Release
+        id: create_release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ github.ref }}
+          release_name: Release ${{ github.ref }}
+          body: ""
+          prerelease: true
+      - name: Upload Release Asset
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: Artisan\bin\Release\Artisan\latest.zip
+          asset_name: Artisan.zip
+          asset_content_type: application/zip
+      - name: Upload Release Asset
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: Artisan\bin\Release\Artisan\Artisan.json
+          asset_name: Artisan.json
+          asset_content_type: text/plain
